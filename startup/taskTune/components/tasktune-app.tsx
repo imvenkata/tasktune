@@ -704,11 +704,8 @@ export default function TaskTuneApp() {
         <div className="flex-1 overflow-auto">
           {/* Add responsive padding */}
           <header className="h-16 border-b border-gray-200 flex items-center px-3 sm:px-4 md:px-6 justify-between">
-            {/* Make text smaller on mobile */}
-            <h1 className="text-lg sm:text-xl md:text-2xl font-medium">Dashboard</h1>
-
-            {/* Hide less important elements on small screens */}
-            <div className="flex items-center space-x-2 md:space-x-4">
+            {/* Remove Dashboard text and date selector */}
+            <div className="flex items-center space-x-2">
               <button
                 className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
                 onClick={() => {
@@ -721,22 +718,6 @@ export default function TaskTuneApp() {
                   <Moon className="h-4 w-4 text-gray-700" />
                 )}
               </button>
-              <button className="hidden sm:block px-2 md:px-4 py-1 rounded-full text-gray-800 dark:text-gray-200 text-xs md:text-sm">
-                Today
-              </button>
-
-              {/* Keep essential buttons visible */}
-              <div className="flex items-center space-x-1 sm:space-x-2">
-                <button className="px-2 sm:px-3 md:px-4 py-1 rounded-full text-gray-800 dark:text-gray-200 text-xs">
-                  Month
-                </button>
-                <button className="px-2 sm:px-3 md:px-4 py-1 rounded-full text-gray-800 dark:text-gray-200 text-xs">
-                  Week
-                </button>
-                <button className="px-2 sm:px-3 md:px-4 py-1 rounded-full text-gray-800 dark:text-gray-200 text-xs">
-                  Day
-                </button>
-              </div>
             </div>
           </header>
 
@@ -767,8 +748,8 @@ export default function TaskTuneApp() {
                   <div className="flex items-center space-x-2">
                     <button
                       className={cn(
-                        "px-2 md:px-4 py-1 rounded-full text-gray-800 text-xs md:text-sm",
-                        activeCalendarView === "month" ? "bg-purple-200" : "bg-gray-200",
+                        "px-2 md:px-4 py-1 rounded-full text-gray-800 dark:text-gray-200 text-xs md:text-sm",
+                        activeCalendarView === "month" ? "bg-purple-200 dark:bg-purple-800" : "bg-gray-200 dark:bg-gray-700",
                       )}
                       onClick={() => setActiveCalendarView("month")}
                     >
@@ -776,8 +757,8 @@ export default function TaskTuneApp() {
                     </button>
                     <button
                       className={cn(
-                        "px-2 md:px-4 py-1 rounded-full text-gray-800 text-xs md:text-sm",
-                        activeCalendarView === "week" ? "bg-purple-200" : "bg-gray-200",
+                        "px-2 md:px-4 py-1 rounded-full text-gray-800 dark:text-gray-200 text-xs md:text-sm",
+                        activeCalendarView === "week" ? "bg-purple-200 dark:bg-purple-800" : "bg-gray-200 dark:bg-gray-700",
                       )}
                       onClick={() => setActiveCalendarView("week")}
                     >
@@ -785,8 +766,8 @@ export default function TaskTuneApp() {
                     </button>
                     <button
                       className={cn(
-                        "px-2 md:px-4 py-1 rounded-full text-gray-800 text-xs md:text-sm",
-                        activeCalendarView === "day" ? "bg-purple-200" : "bg-gray-200",
+                        "px-2 md:px-4 py-1 rounded-full text-gray-800 dark:text-gray-200 text-xs md:text-sm",
+                        activeCalendarView === "day" ? "bg-purple-200 dark:bg-purple-800" : "bg-gray-200 dark:bg-gray-700",
                       )}
                       onClick={() => setActiveCalendarView("day")}
                     >
@@ -1079,8 +1060,6 @@ export default function TaskTuneApp() {
               </div>
             ) : activeTab === "grid" ? (
               <div className="flex-1 overflow-auto p-6">
-                <h2 className="text-xl md:text-2xl lg:text-3xl font-bold mb-6">Dashboard</h2>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {/* Dashboard content */}
                   <div className="bg-white rounded-lg shadow p-6">
