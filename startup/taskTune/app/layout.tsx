@@ -3,9 +3,6 @@ import type { Metadata } from "next"
 import "./globals.css"
 import { AuthProvider } from "@/components/auth/auth-wrapper"
 import { ThemeProvider } from "@/components/theme-provider"
-import { Inter } from "next/font/google"
-
-const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "v0 App",
@@ -20,9 +17,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className="font-sans">
         <AuthProvider>
-          <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          <ThemeProvider attribute="class" defaultTheme="light">
             {children}
           </ThemeProvider>
         </AuthProvider>

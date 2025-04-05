@@ -1,0 +1,73 @@
+@layer base {
+  /* Base typography styles */
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Heading styles */
+  h1, .h1 {
+    @apply font-display text-4xl font-semibold tracking-tight md:text-5xl lg:text-6xl;
+    letter-spacing: -0.02em;
+  }
+
+  h2, .h2 {
+    @apply font-display text-3xl font-semibold tracking-tight md:text-4xl;
+    letter-spacing: -0.01em;
+  }
+
+  h3, .h3 {
+    @apply font-display text-2xl font-semibold tracking-tight md:text-3xl;
+    letter-spacing: -0.01em;
+  }
+
+  h4, .h4 {
+    @apply font-display text-xl font-semibold tracking-tight md:text-2xl;
+  }
+
+  /* Body text styles */
+  p, .body {
+    @apply font-sans text-base leading-relaxed;
+  }
+
+  .body-large {
+    @apply font-sans text-lg leading-relaxed;
+  }
+
+  .body-small {
+    @apply font-sans text-sm leading-relaxed;
+  }
+
+  /* Special text styles */
+  .caption {
+    @apply font-sans text-sm text-muted-foreground;
+  }
+
+  .label {
+    @apply font-sans text-sm font-medium;
+  }
+
+  /* Apple-specific text styles */
+  .apple-title {
+    @apply font-display text-5xl font-semibold tracking-tight md:text-6xl lg:text-7xl;
+    letter-spacing: -0.03em;
+  }
+
+  .apple-subtitle {
+    @apply font-display text-2xl font-medium tracking-tight md:text-3xl;
+    letter-spacing: -0.02em;
+  }
+
+  .apple-body {
+    @apply font-sans text-lg leading-relaxed text-muted-foreground;
+  }
+
+  .apple-caption {
+    @apply font-sans text-sm leading-normal text-muted-foreground;
+  }
+
+  .apple-button {
+    @apply font-sans text-base font-medium tracking-wide;
+  }
+} 
