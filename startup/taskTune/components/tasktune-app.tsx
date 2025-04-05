@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   Calendar,
   Clock,
@@ -16,6 +16,8 @@ import {
   BarChart2,
   Sun,
   Moon,
+  Loader2,
+  AlertCircle,
 } from "lucide-react"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
@@ -26,6 +28,10 @@ import { ICON_COLLECTION } from "@/components/icons"
 import SettingsPage from "@/components/settings/settings-page"
 import GentleNudge from "@/components/gentle-nudge"
 import { useTheme } from "@/components/theme-provider"
+import { useAuth } from "@/components/auth/auth-wrapper"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { useRouter } from "next/navigation"
 
 // Update the renderIcon function in the tasktune-app component
 const renderIcon = (iconId: string | null | undefined, size = "h-6 w-6") => {
@@ -35,6 +41,11 @@ const renderIcon = (iconId: string | null | undefined, size = "h-6 w-6") => {
 }
 
 export default function TaskTuneApp() {
+  const { token, fetchWithAuth, isLoading: isAuthLoading, user } = useAuth()
+  const router = useRouter()
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [isLoadingTasks, setIsLoadingTasks] = useState(true)
+  const [tasksError, setTasksError] = useState<string | null>(null)
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false)
   const [activeView, setActiveView] = useState<"calendar" | "kanban" | "spatial" | "timeline">("calendar")
   const [showAiPlanner, setShowAiPlanner] = useState(false)
@@ -47,10 +58,8 @@ export default function TaskTuneApp() {
   const [isTimerRunning, setIsTimerRunning] = useState(false)
   const [expandedSection, setExpandedSection] = useState<string | null>("todoLists")
   const [showSettings, setShowSettings] = useState(false)
-
   const [selectedTask, setSelectedTask] = useState<Task | undefined>(undefined)
   const [showTaskDetail, setShowTaskDetail] = useState(false)
-
   const [showListInput, setShowListInput] = useState(false)
   const [newListTitle, setNewListTitle] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
@@ -59,69 +68,62 @@ export default function TaskTuneApp() {
     { id: "list-2", title: "Personal Errands" },
     { id: "list-3", title: "Project Ideas" },
   ])
-
-  // Add state for controlling the gentle nudge visibility
-  // Add this after the other useState declarations
   const [showGentleNudge, setShowGentleNudge] = useState(false)
   const [currentNudgeTask, setCurrentNudgeTask] = useState<Task | null>(null)
   const [nextNudgeTask, setNextNudgeTask] = useState<Task | null>(null)
 
-  // Also update the initial tasks to include more colorful icons
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: "1",
-      title: "Longpress to complete",
-      project: "Tutorial",
-      date: "2025-03-26",
-      startTime: "09:00",
-      endTime: "09:01",
-      color: "purple",
-      completed: false,
-      priority: "medium",
-      icon: "computer",
-    },
-    {
-      id: "2",
-      title: "Discover taskTune",
-      project: "Tutorial",
-      date: "2025-03-27",
-      startTime: "10:00",
-      endTime: "10:01",
-      color: "blue",
-      completed: false,
-      priority: "medium",
-      icon: "lightning",
-    },
-    {
-      id: "3",
-      title: "Click on checkmark to complete",
-      project: "Tutorial",
-      date: "2025-03-26",
-      startTime: "13:00",
-      endTime: "13:01",
-      color: "orange",
-      completed: false,
-      priority: "medium",
-      icon: "smile",
-    },
-    {
-      id: "4",
-      title: "Try adding a task",
-      project: "Tutorial",
-      date: "2025-03-27",
-      startTime: "14:00",
-      endTime: "14:01",
-      color: "blue",
-      completed: false,
-      priority: "medium",
-      icon: "heart",
-    },
-  ])
+  const [activeCalendarView, setActiveCalendarView] = useState<"month" | "week" | "day">("month")
+  const [activeTab, setActiveTab] = useState<"home" | "calendar" | "grid">("calendar")
 
-  // Log tasks whenever they change
+  // Redirect to login if auth is done loading and there's no user
   useEffect(() => {
-    console.log("Current tasks:", tasks)
-  }, [tasks])
+    if (!isAuthLoading && !user) {
+      console.log("[TaskTuneApp] No user found after auth load, redirecting to /auth");
+      router.push('/auth');
+    }
+  }, [isAuthLoading, user, router]);
+
+  // Fetch tasks from the backend
+  const fetchTasks = useCallback(async () => {
+    // This check might be redundant now due to the redirect effect, but safe to keep
+    if (!token || isAuthLoading) return
+
+    setIsLoadingTasks(true)
+    setTasksError(null)
+    console.log("[TaskTuneApp] Fetching tasks...") // Added component prefix
+    try {
+      const response = await fetchWithAuth("/tasks")
+      if (!response.ok) {
+         let errorDetail = "Failed to fetch tasks.";
+         try {
+            const errorData = await response.json();
+            errorDetail = errorData.detail || errorDetail;
+         } catch(e) {}
+         throw new Error(errorDetail);
+      }
+      const fetchedTasks: Task[] = await response.json()
+      console.log("[TaskTuneApp] Fetched tasks:", fetchedTasks)
+      setTasks(fetchedTasks)
+    } catch (error) {
+      console.error("[TaskTuneApp] Error fetching tasks:", error)
+      setTasksError(error instanceof Error ? error.message : "An unknown error occurred while fetching tasks.")
+    } finally {
+      console.log("[TaskTuneApp] Task fetching finished."); // Added log
+      setIsLoadingTasks(false)
+    }
+  }, [token, fetchWithAuth, isAuthLoading])
+
+  // Fetch tasks when the component mounts and the user is authenticated
+  useEffect(() => {
+    console.log("[TaskTuneApp] Task fetching useEffect triggered - token:", !!token, "isAuthLoading:", isAuthLoading); // Added log
+    if (token && !isAuthLoading) {
+      fetchTasks()
+    } else if (!isAuthLoading) { // Handle the case where auth finished but there's no token
+       console.log("[TaskTuneApp] No token or auth loading, setting isLoadingTasks to false."); // Added log
+       setIsLoadingTasks(false); // Stop task loading indicator if not fetching
+    }
+    // If isAuthLoading is true, we wait for the auth state to resolve.
+  }, [token, isAuthLoading, fetchTasks])
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
@@ -178,23 +180,111 @@ export default function TaskTuneApp() {
     return null
   }
 
-  // Replace the handleAddTask function with this version
-  const handleAddTask = (newTask: Task) => {
-    console.log("Adding new task:", newTask)
-    console.log("Task date:", newTask.date)
+  // Rename handleAddTask to handleSaveNewTask and adjust signature
+  const handleSaveNewTask = async (newTaskFromModal: Task) => {
+    if (!token) return;
 
-    // Create a new array with the new task
-    const updatedTasks = [...tasks, newTask]
+    // Extract data needed for the backend API (excluding frontend ID, completed status)
+    const { id, completed, subTasks, ...payload } = newTaskFromModal;
 
-    // Update the state with the new array
-    setTasks(updatedTasks)
+    console.log("Attempting to save new task via API:", payload);
+    try {
+      const response = await fetchWithAuth('/tasks', {
+        method: 'POST',
+        body: JSON.stringify(payload), // Send relevant data
+      });
+      if (!response.ok) {
+        let errorDetail = "Failed to add task.";
+        try {
+           const errorData = await response.json();
+           errorDetail = errorData.detail || errorDetail;
+        } catch(e) {}
+        throw new Error(errorDetail);
+      }
+      const createdTask: Task = await response.json();
+      console.log("Task added successfully:", createdTask);
+      setTasks((prevTasks) => [...prevTasks, createdTask]);
+      setIsTaskModalOpen(false); // Close modal on success
+    } catch (error) {
+      console.error("Error adding task:", error);
+      alert(`Error adding task: ${error instanceof Error ? error.message : "Unknown error"}`) // Simple alert for now
+    }
+  };
 
-    // Close the modal
-    setIsTaskModalOpen(false)
-  }
+  // Update handleUpdateTask function to match expected prop signature
+  const handleUpdateTask = async (updatedTask: Task) => {
+    if (!token || !updatedTask || !updatedTask.id) return;
+    const taskId = updatedTask.id;
+    // Extract only the fields allowed by TaskUpdate schema for the PUT request
+    // Assuming TaskUpdate schema includes title, notes, date, startTime, endTime, completed, priority, category, icon
+    // Removed subtasks from destructuring as it's likely not part of Task type used here
+    const { id, ...updatePayload } = updatedTask;
+
+    console.log(`Attempting to update task ${taskId} via API:`, updatePayload)
+    try {
+      const response = await fetchWithAuth(`/tasks/${taskId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updatePayload), // Send only the updatable fields
+      });
+      if (!response.ok) {
+        let errorDetail = "Failed to update task.";
+        try {
+           const errorData = await response.json();
+           errorDetail = errorData.detail || errorDetail;
+        } catch(e) {}
+        throw new Error(errorDetail);
+      }
+      const updatedTaskFromServer: Task = await response.json();
+      console.log("Task updated successfully:", updatedTaskFromServer);
+      setTasks((prevTasks) =>
+        prevTasks.map((task) =>
+          task.id === taskId ? updatedTaskFromServer : task
+        )
+      );
+      closeTaskDetail(); // Close detail view after update
+    } catch (error) {
+      console.error(`Error updating task ${taskId}:`, error);
+      alert(`Error updating task: ${error instanceof Error ? error.message : "Unknown error"}`) // Simple alert for now
+    }
+  };
+
+  // Corrected handleDeleteTask function with proper try...catch
+  const handleDeleteTask = async (taskId: string | number) => {
+     if (!token) return;
+     console.log(`Attempting to delete task ${taskId} via API`)
+
+     // Optional: Add confirmation dialog here
+     // if (!confirm('Are you sure you want to delete this task?')) {
+     //   return;
+     // }
+
+     try { // Restore the try block
+       const response = await fetchWithAuth(`/tasks/${taskId}`, {
+         method: 'DELETE',
+       });
+       if (!response.ok) {
+          let errorDetail = "Failed to delete task.";
+          // Handle potential non-JSON response for successful delete (status 204 No Content)
+          if (response.status !== 204) { 
+             try {
+                 const errorData = await response.json();
+                 errorDetail = errorData.detail || errorDetail;
+             } catch(e) {
+                errorDetail = `Server responded with status ${response.status}`; 
+             }
+          }
+         throw new Error(errorDetail);
+       }
+       console.log("Task deleted successfully:", taskId);
+       setTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
+       closeTaskDetail(); // Close detail view after deleting the task
+     } catch (error) { // Correctly placed catch block
+       console.error(`Error deleting task ${taskId}:`, error);
+       alert(`Error deleting task: ${error instanceof Error ? error.message : "Unknown error"}`) // Simple alert for now
+     }
+   };
 
   // Add a function to handle the gentle nudge visibility
-  // Add this with the other handler functions
   const handleDismissNudge = () => {
     setShowGentleNudge(false)
   }
@@ -264,8 +354,8 @@ export default function TaskTuneApp() {
   }
 
   const closeTaskDetail = () => {
-    setShowTaskDetail(false)
     setSelectedTask(undefined)
+    setShowTaskDetail(false)
   }
 
   // Replace the handleDateClick function with this simplified version:
@@ -345,11 +435,6 @@ export default function TaskTuneApp() {
 
   const timeSlots = ["00:00", "01:00", "02:00", "03:00", "04:00", "05:00", "06:00"]
 
-  const [activeCalendarView, setActiveCalendarView] = useState<"month" | "week" | "day">("month")
-
-  // First, add a new state to track the active tab:
-  const [activeTab, setActiveTab] = useState<"home" | "calendar" | "grid">("calendar")
-
   // Calculate task completion percentage
   const calculateCompletionPercentage = () => {
     if (tasks.length === 0) return 0
@@ -371,7 +456,6 @@ export default function TaskTuneApp() {
   }
 
   // Add a useEffect to simulate the appearance of gentle nudges
-  // Add this with the other useEffect hooks
   useEffect(() => {
     // Simulate a gentle nudge appearing after 5 seconds
     const nudgeTimer = setTimeout(() => {
@@ -446,6 +530,47 @@ export default function TaskTuneApp() {
     )
   }
 
+  // Update Loading Check: Only show loader while auth OR task fetching is truly active
+  // AND if a user is potentially going to be loaded (or tasks fetched)
+  if (isAuthLoading || (isLoadingTasks && user)) {
+    // Show loader if auth is loading, OR if tasks are loading AND we expect a user
+    console.log("[TaskTuneApp] Rendering Loader - isAuthLoading:", isAuthLoading, "isLoadingTasks:", isLoadingTasks, "user:", !!user); // Added log
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-12 w-12 animate-spin text-purple-600" />
+        <span className="ml-4 text-xl">Loading...</span> {/* Generic loading message */}
+      </div>
+    );
+  }
+
+  // Show error state if tasks failed to load (only if a user was expected)
+  if (tasksError && user) {
+     console.log("[TaskTuneApp] Rendering Task Error State"); // Added log
+    return (
+       <div className="flex items-center justify-center min-h-screen p-4">
+         <Alert variant="destructive" className="max-w-md">
+           <AlertCircle className="h-4 w-4" />
+           <AlertTitle>Error Loading Tasks</AlertTitle>
+           <AlertDescription>
+             {tasksError}
+             <Button onClick={fetchTasks} variant="outline" size="sm" className="ml-4">
+               Retry
+             </Button>
+           </AlertDescription>
+         </Alert>
+       </div>
+    );
+  }
+
+  // If loading is finished and there's no user, the redirect effect should have triggered.
+  // If for some reason it hasn't, rendering null or an empty state might be preferable to the full UI.
+  if (!user) {
+     console.log("[TaskTuneApp] Rendering null because no user found after loading."); // Added log
+     return null; // Or a minimal logged-out message/component
+  }
+
+  // Render the main application UI only if loading is done and user exists
+  console.log("[TaskTuneApp] Rendering main app UI"); // Added log
   return (
     <>
       <div className="flex h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
@@ -704,21 +829,8 @@ export default function TaskTuneApp() {
         <div className="flex-1 overflow-auto">
           {/* Add responsive padding */}
           <header className="h-16 border-b border-gray-200 flex items-center px-3 sm:px-4 md:px-6 justify-between">
-            {/* Remove Dashboard text and date selector */}
-            <div className="flex items-center space-x-2">
-              <button
-                className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
-                onClick={() => {
-                  setTheme(theme === "dark" ? "light" : "dark")
-                }}
-              >
-                {theme === "dark" ? (
-                  <Sun className="h-4 w-4 text-yellow-500" />
-                ) : (
-                  <Moon className="h-4 w-4 text-gray-700" />
-                )}
-              </button>
-            </div>
+            {/* Empty div or placeholder for left side if needed */}
+            <div></div>
           </header>
 
           {/* Add responsive padding to content */}
@@ -728,11 +840,15 @@ export default function TaskTuneApp() {
               <div className="flex-1 overflow-auto">
                 {/* Calendar Header */}
                 <header className="h-16 border-b border-gray-200 flex items-center px-6 justify-between">
-                  <button className="mr-2 p-1 rounded-full hover:bg-gray-100" onClick={() => setIsTaskModalOpen(true)}>
-                    <Plus className="h-5 w-5 text-purple-600" />
-                  </button>
-                  <span className="font-medium mr-1">Add task</span>
+                  {/* Add Task Button */}
+                  <div className="flex items-center">
+                     <button className="mr-2 p-1 rounded-full hover:bg-gray-100" onClick={() => setIsTaskModalOpen(true)}>
+                        <Plus className="h-5 w-5 text-purple-600" />
+                     </button>
+                     <span className="font-medium mr-1">Add task</span>
+                  </div>
 
+                  {/* Date Navigation */}
                   <div className="mx-4 flex items-center">
                     <button className="p-1 rounded-full hover:bg-gray-100">
                       <ChevronLeft className="h-5 w-5" />
@@ -743,8 +859,10 @@ export default function TaskTuneApp() {
                     </button>
                   </div>
 
+                  {/* Month Display */}
                   <div className="text-xl font-semibold">{currentMonth}</div>
 
+                  {/* View Switcher & Theme Toggle */}
                   <div className="flex items-center space-x-2">
                     <button
                       className={cn(
@@ -773,10 +891,23 @@ export default function TaskTuneApp() {
                     >
                       Day
                     </button>
+                    {/* Added dark mode toggle button here */}
+                    <button
+                      className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 ml-2" /* Added ml-2 for spacing */
+                      onClick={() => {
+                        setTheme(theme === "dark" ? "light" : "dark")
+                      }}
+                    >
+                      {theme === "dark" ? (
+                        <Sun className="h-4 w-4 text-yellow-500" />
+                      ) : (
+                        <Moon className="h-4 w-4 text-gray-700" />
+                      )}
+                    </button>
                   </div>
                 </header>
 
-                {/* Calendar View */}
+                {/* Calendar View Content */}
                 <div className="flex flex-col h-full">
                   {activeCalendarView === "month" && (
                     <>
@@ -1097,13 +1228,9 @@ export default function TaskTuneApp() {
         </div>
         {isTaskModalOpen && (
           <TaskModal
+            isOpen={isTaskModalOpen}
             onClose={() => setIsTaskModalOpen(false)}
-            onSave={handleAddTask}
-            onDelete={(taskId) => {
-              // Remove the task from the tasks array
-              setTasks(tasks.filter((t) => t.id !== taskId))
-              setIsTaskModalOpen(false)
-            }}
+            onSave={handleSaveNewTask}
             task={selectedTask}
           />
         )}
@@ -1111,16 +1238,9 @@ export default function TaskTuneApp() {
           <TaskDetailView
             task={selectedTask}
             onClose={closeTaskDetail}
-            onUpdate={(updatedTask) => {
-              // Update the task in the tasks array
-              setTasks(tasks.map((t) => (t.id === updatedTask.id ? updatedTask : t)))
-              setShowTaskDetail(false)
-            }}
-            onDelete={(taskId) => {
-              // Remove the task from the tasks array
-              setTasks(tasks.filter((t) => t.id !== taskId))
-              setShowTaskDetail(false)
-            }}
+            onUpdate={handleUpdateTask}
+            onDelete={handleDeleteTask}
+            fetchWithAuth={fetchWithAuth}
           />
         )}
         {showGentleNudge && (
