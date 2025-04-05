@@ -15,7 +15,17 @@ import {
 import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
 
-const Form = FormProvider
+const Form = React.forwardRef<
+  HTMLFormElement,
+  React.HTMLAttributes<HTMLFormElement>
+>(({ className, ...props }, ref) => (
+  <form
+    ref={ref}
+    className={cn("space-y-4 md:space-y-6", className)}
+    {...props}
+  />
+))
+Form.displayName = "Form"
 
 type FormFieldContextValue<
   TFieldValues extends FieldValues = FieldValues,
@@ -80,7 +90,7 @@ const FormItem = React.forwardRef<
 
   return (
     <FormItemContext.Provider value={{ id }}>
-      <div ref={ref} className={cn("space-y-2", className)} {...props} />
+      <div ref={ref} className={cn("space-y-2 md:space-y-3", className)} {...props} />
     </FormItemContext.Provider>
   )
 })
@@ -135,7 +145,7 @@ const FormDescription = React.forwardRef<
     <p
       ref={ref}
       id={formDescriptionId}
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-muted-foreground mt-1 md:mt-1.5", className)}
       {...props}
     />
   )
