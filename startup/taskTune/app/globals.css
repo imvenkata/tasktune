@@ -2,9 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import "../styles/typography.css";
-@import "../styles/spacing.css";
-
 @layer base {
   :root {
     /* Light mode - Clean, neutral grays */
