@@ -3,7 +3,7 @@ from fastapi import HTTPException, status
 from typing import List, Optional
 import models
 import schemas
-from auth import get_password_hash, verify_password, create_access_token
+from auth import get_password_hash, verify_password, create_access_token, create_refresh_token
 from datetime import timedelta
 
 # User operations
@@ -63,14 +63,22 @@ def authenticate_user(db: Session, user_credentials: schemas.UserLogin):
     
     # Create access token
     access_token = create_access_token(
-        data={"user_id": user.id},
-        expires_delta=timedelta(days=7)
+        data={"user_id": user.id}
     )
     
+    # Create refresh token
+    refresh_token = create_refresh_token(
+        data={"user_id": user.id}
+    )
+    
+    # Create the UserResponse object from the SQLAlchemy user model
+    user_response = schemas.UserResponse.model_validate(user, from_attributes=True)
+
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
-        "user": user
+        "user": user_response # Return the Pydantic model instance
     }
 
 # Task operations

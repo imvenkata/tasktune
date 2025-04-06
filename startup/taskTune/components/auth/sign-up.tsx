@@ -40,12 +40,12 @@ export default function SignUp() {
     }
 
     try {
-      const success = await signup(name, email, password)
-      if (!success) {
-        setError("Failed to create account")
+      const result = await signup(name, email, password)
+      if (!result.success) {
+        setError(result.error || "An unknown signup error occurred.")
       }
     } catch (err) {
-      setError("An error occurred during signup")
+      setError("An unexpected error occurred during signup.")
       console.error(err)
     }
   }

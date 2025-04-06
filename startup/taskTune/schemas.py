@@ -85,7 +85,7 @@ class UserSettings(BaseModel):
     language: str
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserResponse(UserBase):
     id: int
@@ -93,7 +93,7 @@ class UserResponse(UserBase):
     settings: Optional[UserSettings] = None
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class User(UserBase):
     id: int
@@ -101,13 +101,18 @@ class User(UserBase):
     settings: Optional[UserSettings] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
     user: UserResponse
 
+class TokenRefresh(BaseModel):
+    access_token: str
+    token_type: str
+    
 class TokenData(BaseModel):
     user_id: Optional[int] = None
 
@@ -119,7 +124,7 @@ class SubTask(SubTaskBase):
     updated_at: Optional[datetime] = None
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class Task(TaskBase):
     id: int
@@ -143,7 +148,7 @@ class Task(TaskBase):
     subtasks: List[SubTask] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class TaskDelete(BaseModel):
     id: int

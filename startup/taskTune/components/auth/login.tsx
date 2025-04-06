@@ -26,12 +26,12 @@ export default function Login() {
     }
 
     try {
-      const success = await login(email, password)
-      if (!success) {
-        setError("Invalid email or password")
+      const result = await login(email, password)
+      if (!result.success) {
+        setError(result.error || "An unknown login error occurred.")
       }
     } catch (err) {
-      setError("An error occurred during login")
+      setError("An unexpected error occurred during login.")
       console.error(err)
     }
   }

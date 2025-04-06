@@ -12,9 +12,11 @@ interface TaskDetailViewProps {
   onClose: () => void
   onUpdate: (task: Task) => void
   onDelete?: (taskId: string) => void
+  fetchWithAuth: (url: string, options: RequestInit) => Promise<Response>
+  onRefresh?: () => void
 }
 
-export default function TaskDetailView({ task, onClose, onUpdate, onDelete }: TaskDetailViewProps) {
+export default function TaskDetailView({ task, onClose, onUpdate, onDelete, fetchWithAuth, onRefresh }: TaskDetailViewProps) {
   const [editMode, setEditMode] = useState(false)
   const [editedTask, setEditedTask] = useState<Task>({ ...task })
   const [newSubtask, setNewSubtask] = useState("")
@@ -26,108 +28,230 @@ export default function TaskDetailView({ task, onClose, onUpdate, onDelete }: Ta
     return Math.round((completedCount / subtasks.length) * 100)
   }
 
-  const toggleSubtask = (subtaskId: string) => {
-    if (!editedTask.subTasks) return
+  const handleSubtaskToggle = async (subtaskId: string, isComplete: boolean) => {
+    if (!task) return;
+    
+    try {
+      // Optimistically update UI first
+      // Update local state instead of using updateSubtask from store
+      setEditedTask(prevTask => {
+        const updatedSubtasks = (prevTask.subTasks || []).map(st => 
+          st.id === subtaskId ? { ...st, completed: isComplete } : st
+        );
+        
+        return {
+          ...prevTask,
+          subTasks: updatedSubtasks,
+          progress: calculateTaskProgress(updatedSubtasks),
+          completed: updatedSubtasks.every(st => st.completed) && updatedSubtasks.length > 0
+        };
+      });
+      
+      // Get the updated subtask from the task
+      const updatedSubTasks = task.subTasks ? [...task.subTasks] : [];
+      const subtaskIndex = updatedSubTasks.findIndex(st => st.id === subtaskId);
+      
+      if (subtaskIndex === -1) {
+        console.error("Could not find subtask with ID:", subtaskId);
+        return;
+      }
+      
+      // Calculate if all subtasks are completed after this change
+      const allSubtasksCompleted = updatedSubTasks.every(subtask => 
+        subtask.id === subtaskId ? isComplete : subtask.completed
+      );
+      
+      // Send the update to the backend
+      const response = await fetchWithAuth(`/subtasks/${subtaskId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          completed: isComplete
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to update subtask (${response.status})`);
+      }
+      
+      // Update parent task completion status if needed
+      if (allSubtasksCompleted !== task.completed && updatedSubTasks.length > 0) {
+        console.log(`All subtasks completed: ${allSubtasksCompleted}, updating parent task completion status`);
+        
+        const taskResponse = await fetchWithAuth(`/tasks/${task.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            completed: allSubtasksCompleted,
+            progress: allSubtasksCompleted ? 100 : calculateTaskProgress(updatedSubTasks)
+          }),
+        });
+        
+        if (!taskResponse.ok) {
+          console.warn(`Failed to update parent task completion status (${taskResponse.status})`);
+        }
+      }
+      
+      // Refresh task data if callback exists
+      if (onRefresh) {
+        onRefresh();
+      }
+      
+    } catch (error) {
+      console.error("Error toggling subtask:", error);
+      // Revert optimistic update on failure
+      setEditedTask(prevTask => {
+        const revertedSubtasks = (prevTask.subTasks || []).map(st => 
+          st.id === subtaskId ? { ...st, completed: !isComplete } : st
+        );
+        
+        return {
+          ...prevTask,
+          subTasks: revertedSubtasks,
+          progress: calculateTaskProgress(revertedSubtasks),
+          completed: revertedSubtasks.every(st => st.completed) && revertedSubtasks.length > 0
+        };
+      });
+    }
+  };
+  
+  // Helper function to calculate task progress based on completed subtasks
+  const calculateTaskProgress = (subtasks: any[]): number => {
+    if (!subtasks || subtasks.length === 0) return 0;
+    const completedCount = subtasks.filter(st => st.completed).length;
+    return Math.round((completedCount / subtasks.length) * 100);
+  };
 
-    const updatedSubtasks = editedTask.subTasks.map((st) =>
-      st.id === subtaskId ? { ...st, completed: !st.completed } : st,
-    )
+  const addSubtask = async () => {
+    if (!newSubtask.trim() || !task?.id || !fetchWithAuth) return
 
-    const progress = calculateProgress(updatedSubtasks)
-    setEditedTask({
-      ...editedTask,
-      subTasks: updatedSubtasks,
-      progress,
-      completed: progress === 100,
-    })
-  }
-
-  const addSubtask = () => {
-    if (!newSubtask.trim()) return
-
-    const newSubtaskItem: SubTask = {
-      id: `subtask-${Date.now()}`,
-      title: newSubtask,
-      completed: false,
+    const subtaskPayload = {
+      title: newSubtask.trim(),
+      completed: false, // Default new subtasks to not completed
     }
 
-    const updatedSubtasks = [...(editedTask.subTasks || []), newSubtaskItem]
-    setEditedTask({
-      ...editedTask,
-      subTasks: updatedSubtasks,
-      progress: calculateProgress(updatedSubtasks),
-    })
-    setNewSubtask("")
-  }
-
-  const removeSubtask = (subtaskId: string) => {
-    if (!editedTask.subTasks) return
-
-    const updatedSubtasks = editedTask.subTasks.filter((st) => st.id !== subtaskId)
-    setEditedTask({
-      ...editedTask,
-      subTasks: updatedSubtasks,
-      progress: calculateProgress(updatedSubtasks),
-    })
-  }
-
-  const generateAISubtasks = () => {
-    setIsGeneratingSubtasks(true)
-
-    // Simulate AI generation (in a real app, this would call an AI service)
-    setTimeout(() => {
-      const aiGeneratedSubtasks = generateSubtasksForTitle(editedTask.title)
-      setEditedTask({
-        ...editedTask,
-        subTasks: [...(editedTask.subTasks || []), ...aiGeneratedSubtasks],
+    console.log(`Adding subtask to task ${task.id}:`, subtaskPayload);
+    try {
+      const response = await fetchWithAuth(`/tasks/${task.id}/subtasks`, {
+        method: 'POST',
+        body: JSON.stringify(subtaskPayload),
       })
-      setIsGeneratingSubtasks(false)
-    }, 1000)
+
+      if (!response.ok) {
+        let errorDetail = "Failed to add subtask.";
+        try {
+          const errorData = await response.json();
+          errorDetail = errorData.detail || errorDetail;
+        } catch (e) {}
+        throw new Error(errorDetail);
+      }
+
+      const createdSubtask: SubTask = await response.json();
+      console.log("Subtask added successfully:", createdSubtask);
+
+      // Update local state AFTER successful API call
+      setEditedTask((prevTask) => {
+        const updatedSubtasks = [...(prevTask.subTasks || []), createdSubtask];
+        return {
+          ...prevTask,
+          subTasks: updatedSubtasks,
+          progress: calculateProgress(updatedSubtasks),
+        };
+      });
+      setNewSubtask(""); // Clear input field
+
+    } catch (error) {
+      console.error("Error adding subtask:", error);
+      alert(`Error adding subtask: ${error instanceof Error ? error.message : "Unknown error"}`);
+      // TODO: Better error display
+    }
   }
 
-  // Helper function to generate relevant subtasks based on the task title
-  const generateSubtasksForTitle = (taskTitle: string) => {
-    const lowercaseTitle = taskTitle.toLowerCase()
-    let generatedSubtasks: SubTask[] = []
+  const removeSubtask = async (subtaskId: string | number) => {
+    if (!fetchWithAuth) return;
+    // Optimistically remove from UI, or wait for API response?
+    // For now, let's wait for API confirmation before removing locally.
+    console.log(`Deleting subtask ${subtaskId}`);
+    try {
+      const response = await fetchWithAuth(`/subtasks/${subtaskId}`, {
+        method: 'DELETE',
+      });
 
-    if (lowercaseTitle.includes("meeting") || lowercaseTitle.includes("call")) {
-      generatedSubtasks = [
-        { id: generateId(), title: "Prepare agenda", completed: false },
-        { id: generateId(), title: "Send calendar invites", completed: false },
-        { id: generateId(), title: "Prepare presentation slides", completed: false },
-        { id: generateId(), title: "Take meeting notes", completed: false },
-        { id: generateId(), title: "Send follow-up email", completed: false },
-      ]
-    } else if (lowercaseTitle.includes("report") || lowercaseTitle.includes("document")) {
-      generatedSubtasks = [
-        { id: generateId(), title: "Gather necessary data", completed: false },
-        { id: generateId(), title: "Create outline", completed: false },
-        { id: generateId(), title: "Write first draft", completed: false },
-        { id: generateId(), title: "Review and edit", completed: false },
-        { id: generateId(), title: "Format document", completed: false },
-        { id: generateId(), title: "Submit for approval", completed: false },
-      ]
-    } else if (lowercaseTitle.includes("project") || lowercaseTitle.includes("develop")) {
-      generatedSubtasks = [
-        { id: generateId(), title: "Define project scope", completed: false },
-        { id: generateId(), title: "Create project timeline", completed: false },
-        { id: generateId(), title: "Assign responsibilities", completed: false },
-        { id: generateId(), title: "Implement core features", completed: false },
-        { id: generateId(), title: "Test functionality", completed: false },
-        { id: generateId(), title: "Review and finalize", completed: false },
-      ]
-    } else {
-      // Default subtasks for any other type of task
-      generatedSubtasks = [
-        { id: generateId(), title: "Research and plan", completed: false },
-        { id: generateId(), title: "Prepare materials", completed: false },
-        { id: generateId(), title: "Execute main task", completed: false },
-        { id: generateId(), title: "Review results", completed: false },
-        { id: generateId(), title: "Follow up if needed", completed: false },
-      ]
+      if (!response.ok) {
+         let errorDetail = "Failed to delete subtask.";
+         if (response.status !== 204) { 
+            try {
+                const errorData = await response.json();
+                errorDetail = errorData.detail || errorDetail;
+            } catch(e) {
+               errorDetail = `Server responded with status ${response.status}`; 
+            }
+         }
+        throw new Error(errorDetail);
+      }
+
+      console.log("Subtask deleted successfully:", subtaskId);
+      // Update local state AFTER successful API call
+      setEditedTask((prevTask) => {
+        const updatedSubtasks = (prevTask.subTasks || []).filter((st) => st.id !== subtaskId);
+        return {
+          ...prevTask,
+          subTasks: updatedSubtasks,
+          progress: calculateProgress(updatedSubtasks),
+        };
+      });
+
+    } catch (error) {
+      console.error(`Error deleting subtask ${subtaskId}:`, error);
+      alert(`Error deleting subtask: ${error instanceof Error ? error.message : "Unknown error"}`);
+      // TODO: Better error display
     }
+  }
 
-    return generatedSubtasks
+  const generateAISubtasks = async () => {
+    if (!task?.id || !fetchWithAuth) return;
+
+    setIsGeneratingSubtasks(true)
+    console.log(`Generating AI subtasks for task ${task.id}`);
+
+    try {
+      // Note: The request body schema (schemas.GenerateSubtasksRequest)
+      // might need specific fields. Adjust payload if necessary.
+      const payload = {}; // Adjust if backend expects a body
+
+      const response = await fetchWithAuth(`/tasks/${task.id}/generate-subtasks`, {
+        method: 'POST',
+        body: JSON.stringify(payload), // Send empty or specific body based on backend needs
+      });
+
+      if (!response.ok) {
+        let errorDetail = "Failed to generate AI subtasks.";
+        try {
+          const errorData = await response.json();
+          errorDetail = errorData.detail || errorDetail;
+        } catch (e) {}
+        throw new Error(errorDetail);
+      }
+
+      const generatedSubtasks: SubTask[] = await response.json();
+      console.log("AI Subtasks generated successfully:", generatedSubtasks);
+
+      // Update local state with the generated subtasks
+      setEditedTask((prevTask) => {
+         const updatedSubtasks = [...(prevTask.subTasks || []), ...generatedSubtasks];
+         return {
+           ...prevTask,
+           subTasks: updatedSubtasks,
+           progress: calculateProgress(updatedSubtasks),
+           // Parent task completion status likely doesn't change just by adding subtasks
+         };
+      });
+
+    } catch (error) {
+      console.error("Error generating AI subtasks:", error);
+      alert(`Error generating AI subtasks: ${error instanceof Error ? error.message : "Unknown error"}`);
+      // TODO: Better error display
+    } finally {
+      setIsGeneratingSubtasks(false)
+    }
   }
 
   const saveChanges = () => {
@@ -377,7 +501,7 @@ export default function TaskDetailView({ task, onClose, onUpdate, onDelete }: Ta
             <div className="space-y-2">
               {(editedTask.subTasks || []).map((subtask) => (
                 <div key={subtask.id} className="flex items-center bg-gray-100 rounded-md p-2">
-                  <button className="h-5 w-5 rounded-full mr-2 flex-shrink-0" onClick={() => toggleSubtask(subtask.id)}>
+                  <button className="h-5 w-5 rounded-full mr-2 flex-shrink-0" onClick={() => handleSubtaskToggle(subtask.id, !subtask.completed)}>
                     {subtask.completed ? (
                       <div className="h-5 w-5 bg-green-500 rounded-full flex items-center justify-center">
                         <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -476,17 +600,17 @@ export default function TaskDetailView({ task, onClose, onUpdate, onDelete }: Ta
             </>
           ) : (
             <>
-              <button
-                className="text-red-500 hover:text-red-700 flex items-center"
-                onClick={() => {
-                  if (onDelete) {
-                    onDelete(task.id)
-                  }
-                }}
-              >
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </button>
+              {onDelete && (
+                <button
+                  className="text-red-500 hover:text-red-700 flex items-center"
+                  onClick={() => {
+                    onDelete(task.id);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </button>
+              )}
               <button className="bg-purple-600 text-white px-4 py-2 rounded-lg" onClick={onClose}>
                 Close
               </button>

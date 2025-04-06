@@ -11,6 +11,9 @@ services:
       - DATABASE_URL=postgresql://postgres:password@db/aashu
       - SECRET_KEY=${SECRET_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - OPENAI_LOG=info
     volumes:
       - .:/app
     restart: always
@@ -25,6 +28,20 @@ services:
       - POSTGRES_DB=aashu
     ports:
       - "5432:5432"
+
+  frontend:
+    image: node:18
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+    command: bash -c "npm install && npm run dev -- -H 0.0.0.0"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://192.168.1.38:8000
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

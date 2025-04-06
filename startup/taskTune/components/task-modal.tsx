@@ -16,6 +16,7 @@ import {
   Upload,
   Search,
   Battery,
+  CheckCircle2,
 } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { generateId } from "@/lib/utils"
@@ -27,7 +28,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils"
 
 interface TaskModalProps {
+  isOpen: boolean;
   task?: Task
+  initialTask?: Task | null
+  initialDate?: string | null
+  initialTime?: string | null
   onClose: () => void
   onSave: (task: Task) => void
   onDelete?: (taskId: string) => void
@@ -211,36 +216,65 @@ const FLAG_ICONS = [
   { id: "flag-br", name: "Brazil" },
 ]
 
-export default function TaskModal({ task, onClose, onSave, onDelete }: TaskModalProps) {
-  const [title, setTitle] = useState(task?.title || "")
-  const [notes, setNotes] = useState(task?.notes || "")
+export default function TaskModal({ 
+  isOpen, 
+  task, 
+  initialTask = null,
+  initialDate = null, 
+  initialTime = null,
+  onClose, 
+  onSave, 
+  onDelete 
+}: TaskModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null)
+  
+  const initialTaskData = initialTask || task || {
+    id: "new-" + generateId(),
+    title: "",
+    date: initialDate || format(new Date(), 'yyyy-MM-dd'),
+    startTime: initialTime || "09:00",
+    endTime: initialTime ? 
+      `${(parseInt(initialTime.split(':')[0], 10) + 1).toString().padStart(2, '0')}:00` : 
+      "10:00",
+    completed: false,
+    priority: "medium",
+    color: "#8FD3B6",
+    icon: "",
+    notes: "",
+    subTasks: [],
+  }
+  
+  const [currentTask, setCurrentTask] = useState<Task>(initialTaskData)
 
-  // Date handling
-  const defaultDate = task?.date ? new Date(task.date) : new Date()
+  const [title, setTitle] = useState(currentTask.title || "")
+  const [notes, setNotes] = useState(currentTask.notes || "")
+
+  // Date handling - ensure proper parsing of the date string
+  const defaultDate = currentTask.date ? new Date(currentTask.date + 'T00:00:00') : new Date()
   const [startDate, setStartDate] = useState<Date>(defaultDate)
   const [endDate, setEndDate] = useState<Date>(defaultDate)
 
   // Time handling
-  const [startTime, setStartTime] = useState(task?.startTime || "09:00")
-  const [endTime, setEndTime] = useState(task?.endTime || "10:00")
+  const [startTime, setStartTime] = useState(currentTask.startTime || "09:00")
+  const [endTime, setEndTime] = useState(currentTask.endTime || "10:00")
 
-  const [color, setColor] = useState(task?.color || "purple")
-  const [isAllDay, setIsAllDay] = useState(task?.isAllDay || false)
-  const [isAnytime, setIsAnytime] = useState(task?.isAnytime || false)
-  const [repeat, setRepeat] = useState(task?.repeat || "No repeat")
-  const [subtasks, setSubtasks] = useState<SubTask[]>(task?.subTasks || [])
+  const [color, setColor] = useState(currentTask.color || "#B5A8E0")
+  const [isAllDay, setIsAllDay] = useState(currentTask.isAllDay || false)
+  const [isAnytime, setIsAnytime] = useState(currentTask.isAnytime || false)
+  const [repeat, setRepeat] = useState(currentTask.repeat || "No repeat")
+  const [subtasks, setSubtasks] = useState<SubTask[]>(currentTask.subTasks || [])
   const [newSubtask, setNewSubtask] = useState("")
-  const [tags, setTags] = useState<string[]>(task?.category ? [task.category] : [])
+  const [tags, setTags] = useState<string[]>(currentTask.category ? [currentTask.category] : [])
   const [showTagsPopup, setShowTagsPopup] = useState(false)
   const [newTag, setNewTag] = useState("")
   const [isGeneratingSubtasks, setIsGeneratingSubtasks] = useState(false)
-  const [description, setDescription] = useState(task?.notes || "")
-  const [energyLevel, setEnergyLevel] = useState<"low" | "medium" | "high">(task?.energyLevel || "medium")
+  const [description, setDescription] = useState(currentTask.notes || "")
+  const [energyLevel, setEnergyLevel] = useState<"low" | "medium" | "high">(currentTask.energyLevel || "medium")
 
   // Color and icon selection
   const [showColorIconPopup, setShowColorIconPopup] = useState(false)
-  const [selectedColor, setSelectedColor] = useState(task?.color || "#B5A8E0") // Default purple
-  const [selectedIcon, setSelectedIcon] = useState<string | null>(task?.icon || null)
+  const [selectedColor, setSelectedColor] = useState(currentTask.color || "#B5A8E0") // Default purple
+  const [selectedIcon, setSelectedIcon] = useState<string | null>(currentTask.icon || null)
   const [iconSearchQuery, setIconSearchQuery] = useState("")
 
   const tagsPopupRef = useRef<HTMLDivElement>(null)
@@ -276,7 +310,7 @@ export default function TaskModal({ task, onClose, onSave, onDelete }: TaskModal
     return () => {
       document.removeEventListener("mousedown", handleClickOutside)
     }
-  }, [])
+  }, [showTagsPopup, showColorIconPopup])
 
   // Update the handleSave function to ensure proper date formatting:
   const handleSave = () => {
@@ -284,12 +318,12 @@ export default function TaskModal({ task, onClose, onSave, onDelete }: TaskModal
       setTitle("Untitled task")
     }
 
-    // Format the date as YYYY-MM-DD
-    const formattedStartDate = startDate.toISOString().split("T")[0]
-    const formattedEndDate = endDate.toISOString().split("T")[0]
-
+    // Format the date as YYYY-MM-DD, ensuring we don't lose a day due to timezone issues
+    // Use startDate's year, month, and day directly instead of ISO string parsing
+    const formattedStartDate = `${startDate.getFullYear()}-${(startDate.getMonth() + 1).toString().padStart(2, '0')}-${startDate.getDate().toString().padStart(2, '0')}`
+    
     const newTask: Task = {
-      id: task?.id || generateId(),
+      id: currentTask.id,
       title: title.trim() || "Untitled task",
       date: formattedStartDate,
       startTime,
@@ -301,14 +335,15 @@ export default function TaskModal({ task, onClose, onSave, onDelete }: TaskModal
       isAnytime,
       repeat,
       subTasks: subtasks,
-      completed: task?.completed || false,
+      completed: currentTask.completed,
       category: tags.length > 0 ? tags[0] : undefined,
-      priority: task?.priority || "medium",
+      priority: currentTask.priority,
       energyLevel,
     }
 
     console.log("Saving task:", newTask)
     onSave(newTask)
+    onClose()
   }
 
   const addSubtask = () => {
@@ -411,7 +446,7 @@ export default function TaskModal({ task, onClose, onSave, onDelete }: TaskModal
   }
 
   // Render the selected icon or a default icon
-  const renderIcon = (iconId: string, size = "h-6 w-6") => {
+  const renderIcon = (iconId: string, size = "h-5 w-5") => {
     const IconComponent = ICON_COLLECTION[iconId as keyof typeof ICON_COLLECTION]
     return IconComponent ? <IconComponent className={size} /> : null
   }
@@ -445,716 +480,433 @@ export default function TaskModal({ task, onClose, onSave, onDelete }: TaskModal
     setEndTime(time)
   }
 
+  // Update useEffect to reset state when task prop changes (needed for editing existing tasks)
+  useEffect(() => {
+    if (initialTask) {
+      // If editing an existing task, set the currentTask state and update individual fields
+      setCurrentTask(initialTask); // Explicitly set currentTask
+      setTitle(initialTask.title || "")
+      setNotes(initialTask.notes || "")
+      setStartDate(initialTask.date ? new Date(initialTask.date + 'T00:00:00') : new Date())
+      setEndDate(initialTask.date ? new Date(initialTask.date + 'T00:00:00') : new Date())
+      setStartTime(initialTask.startTime || "09:00")
+      setEndTime(initialTask.endTime || "10:00")
+      setColor(initialTask.color || "#B5A8E0")
+      setSelectedColor(initialTask.color || "#B5A8E0")
+      setIsAllDay(initialTask.isAllDay || false)
+      setIsAnytime(initialTask.isAnytime || false)
+      setRepeat(initialTask.repeat || "No repeat")
+      setSubtasks(initialTask.subTasks || [])
+      setTags(initialTask.category ? [initialTask.category] : [])
+      setDescription(initialTask.notes || "")
+      setEnergyLevel(initialTask.energyLevel || "medium")
+      setSelectedIcon(initialTask.icon || null)
+    } else if (isOpen) {
+      // If creating a new task, reset currentTask and update fields based on initialDate/initialTime
+      const newTaskData = {
+        id: "new-" + generateId(),
+        title: "",
+        date: initialDate || format(new Date(), 'yyyy-MM-dd'),
+        startTime: initialTime || "09:00",
+        endTime: initialTime ? 
+          `${(parseInt(initialTime.split(':')[0], 10) + 1).toString().padStart(2, '0')}:00` : 
+          "10:00",
+        completed: false,
+        priority: "medium" as "low" | "medium" | "high",
+        color: "#8FD3B6",
+        icon: "",
+        notes: "",
+        subTasks: [],
+      }
+      setCurrentTask(newTaskData); // Explicitly set currentTask for a new task
+      
+      if (initialDate) {
+        const dateObj = new Date(initialDate + 'T00:00:00')
+        setStartDate(dateObj)
+        setEndDate(dateObj)
+      } else {
+        const now = new Date()
+        setStartDate(now)
+        setEndDate(now)
+      }
+      setTitle("")
+      setNotes("")
+      setStartTime(initialTime || "09:00")
+      setEndTime(initialTime ? 
+        `${(parseInt(initialTime.split(':')[0], 10) + 1).toString().padStart(2, '0')}:00` : 
+        "10:00")
+      setColor("#B5A8E0")
+      setSelectedColor("#B5A8E0")
+      setIsAllDay(false)
+      setIsAnytime(false)
+      setRepeat("No repeat")
+      setSubtasks([])
+      setTags([])
+      setDescription("")
+      setEnergyLevel("medium")
+      setSelectedIcon(null)
+    }
+  }, [initialTask, isOpen, initialDate, initialTime]) // Include initialDate and initialTime in dependencies
+
+  if (!isOpen) return null
+
   return (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-auto animate-in fade-in duration-300">
-      <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col border border-gray-100 overflow-hidden">
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {/* Title and color */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Add title"
-                className="w-full text-xl md:text-2xl font-medium mb-2 focus:outline-none focus:ring-0 border-0 p-0 placeholder:text-gray-400 transition-all"
-              />
-              {/* Update the notes section in the task modal */}
-              <div>
-                {notes || notes === " " ? (
-                  <textarea
-                    id="notes-input"
-                    value={notes === " " ? "" : notes} // Fix to prevent showing a space
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Write notes here"
-                    className="w-full mt-2 p-2 border border-gray-200 rounded-md outline-none resize-none text-gray-600 min-h-[80px]"
-                    autoFocus={notes === " "}
-                  />
-                ) : (
-                  <button
-                    className="text-gray-500 hover:text-gray-700 flex items-center text-sm group transition-all"
-                    onClick={() => {
-                      setNotes(" ") // Set a space to trigger the textarea to show with autoFocus
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-1 group-hover:scale-110 transition-transform" />
-                    <span className="group-hover:text-gray-700 transition-colors">Write notes here</span>
-                  </button>
-                )}
-              </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      {/* Modal Container - Apply theme, rounded corners, shadow */}
+      <div className="bg-card text-foreground rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-border overflow-hidden">
+        {/* Modal Header - Cleaned up */}
+        <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
+          <h2 className="text-lg font-semibold">{currentTask ? "Edit Task" : "New Task"}</h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            aria-label="Close modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Modal Body - Scrollable content area */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Title Input - Refined */}
+          <input
+            type="text"
+            placeholder="Task title..."
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full text-xl font-medium px-2 py-1 border-none focus:ring-0 bg-transparent placeholder-muted-foreground outline-none"
+          />
+
+          {/* Date & Time Section - Refined layout */}
+          <div className="space-y-3">
+             <div className="flex items-center space-x-3">
+               {/* Date Picker Popover - Refined Button */}
+               <Popover>
+                 <PopoverTrigger asChild>
+                   <button
+                     className={cn(
+                       "flex items-center text-sm px-3 py-1.5 rounded-md border border-input bg-background hover:bg-secondary transition-colors",
+                       !startDate && "text-muted-foreground"
+                     )}
+                   >
+                     <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                     {startDate ? format(startDate, "PPP") : <span>Pick a date</span>}
+                   </button>
+                 </PopoverTrigger>
+                 <PopoverContent className="w-auto p-0" align="start">
+                   {/* Calendar Styling might need further theme alignment if default isn't enough */}
+                   <Calendar
+                     mode="single"
+                     selected={startDate}
+                     onSelect={(date) => date && setStartDate(date)}
+                     initialFocus
+                   />
+                 </PopoverContent>
+               </Popover>
+
+               {/* Time Inputs (conditional) - Refined Inputs */}
+               {!isAllDay && !isAnytime && (
+                 <div className="flex items-center space-x-2">
+                   <input
+                     type="time"
+                     value={startTime}
+                     onChange={(e) => handleStartTimeChange(e.target.value)}
+                     className="px-2 py-1 border border-input bg-background rounded-md text-sm focus:ring-primary focus:border-primary"
+                   />
+                   <span>-</span>
+                   <input
+                     type="time"
+                     value={endTime}
+                     onChange={(e) => handleEndTimeChange(e.target.value)}
+                     className="px-2 py-1 border border-input bg-background rounded-md text-sm focus:ring-primary focus:border-primary"
+                   />
+                 </div>
+               )}
             </div>
 
-            {/* Color and Icon Circle */}
-            <div
-              ref={colorIconButtonRef}
-              className="w-20 h-20 rounded-full relative cursor-pointer shadow-md hover:shadow-lg transition-shadow"
-              style={{ backgroundColor: selectedColor }}
-              onClick={() => setShowColorIconPopup(!showColorIconPopup)}
-            >
-              {selectedIcon ? (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  {renderIcon(selectedIcon, "h-10 w-10 text-white")}
+            {/* All Day / Anytime Switches - Refined Layout & Labels */}
+            <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+              <div className="flex items-center space-x-2">
+                <Switch id="all-day" checked={isAllDay} onCheckedChange={setIsAllDay} />
+                <label htmlFor="all-day">All Day</label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch id="anytime" checked={isAnytime} onCheckedChange={setIsAnytime} />
+                <label htmlFor="anytime">Anytime</label>
+              </div>
+            </div>
+          </div>
+
+          {/* Color & Icon Picker Section - Refined Button */}
+          <div className="relative flex items-center space-x-3">
+             <div ref={colorIconButtonRef} className="flex items-center space-x-3">
+                <button
+                  onClick={() => setShowColorIconPopup(!showColorIconPopup)}
+                  className="p-1.5 rounded-full border border-input hover:border-muted-foreground transition-colors"
+                  style={{ backgroundColor: selectedColor }}
+                  aria-label="Select color"
+                />
+                <button
+                   onClick={() => setShowColorIconPopup(!showColorIconPopup)}
+                   className="p-1.5 rounded-lg border border-input hover:bg-secondary transition-colors"
+                   aria-label="Select icon"
+                >
+                   {selectedIcon ? renderIcon(selectedIcon, "h-5 w-5 text-muted-foreground") : <Sparkles className="h-5 w-5 text-muted-foreground" />} {/* Default to sparkles if no icon */}
+                </button>
+              </div>
+
+             {/* Color/Icon Popup - Refined Styling */}
+            {showColorIconPopup && (
+              <div
+                ref={colorIconPopupRef}
+                className="absolute top-full left-0 mt-2 z-10 w-80 bg-popover text-popover-foreground rounded-lg shadow-lg border border-border p-4"
+              >
+                {/* Color Palette Section */}
+                <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Color</h4>
+                <div className="grid grid-cols-7 gap-2 mb-4">
+                  {COLOR_PALETTE.map((bgColor) => (
+                    <button
+                      key={bgColor}
+                      className={cn(
+                        "w-7 h-7 rounded-full border transition-transform hover:scale-110",
+                        selectedColor === bgColor ? "ring-2 ring-offset-2 ring-primary ring-offset-popover" : "border-border/50",
+                      )}
+                      style={{ backgroundColor: bgColor }}
+                      onClick={() => setSelectedColor(bgColor)}
+                      aria-label={`Select color ${bgColor}`}
+                    />
+                  ))}
                 </div>
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Pencil className="h-8 w-8 text-white" />
+
+                {/* Icon Section */}
+                <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Icon</h4>
+                <div className="relative mb-3">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search icons..."
+                    value={iconSearchQuery}
+                    onChange={(e) => setIconSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-2 py-1 border border-input bg-background rounded-md text-sm focus:ring-primary focus:border-primary"
+                  />
                 </div>
+                <div className="max-h-40 overflow-y-auto space-y-2 pr-2">
+                   {/* Example Icon Category - Needs structure for all categories */}
+                   <div className="grid grid-cols-7 gap-2">
+                      {/* Filter and map ALL_ICONS based on iconSearchQuery */}
+                      {[...RECENT_ICONS, ...OTHER_ICONS, ...FOOD_ICONS /* Add other categories */]
+                        .filter(icon => icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()))
+                        .map((icon) => (
+                          <button
+                             key={icon.id}
+                             className={cn(
+                               "p-1 rounded-md flex items-center justify-center hover:bg-secondary",
+                               selectedIcon === icon.id ? "bg-secondary ring-1 ring-primary" : ""
+                             )}
+                             onClick={() => setSelectedIcon(icon.id)}
+                             title={icon.name}
+                          >
+                             {renderIcon(icon.id, "h-5 w-5 text-muted-foreground")}
+                          </button>
+                        ))}
+                    </div>
+                    {/* Add more sections/categories as needed */}
+                </div>
+              </div>
+            )}
+
+            {/* Tags Section - Refined Button */}
+            <div className="relative flex-1">
+              <button
+                 ref={tagsButtonRef}
+                 onClick={() => setShowTagsPopup(!showTagsPopup)}
+                 className="w-full flex items-center justify-between text-left px-3 py-1.5 rounded-md border border-input bg-background hover:bg-secondary text-sm transition-colors"
+              >
+                 <span className="flex items-center gap-2 text-muted-foreground">
+                    <Tag className="h-4 w-4" />
+                    Tags
+                 </span>
+                 <span className="text-foreground truncate max-w-[70%]">
+                   {tags.length > 0 ? tags.map(tag => PREDEFINED_TAGS.find(t => t.id === tag)?.emoji).join(" ") || tags.join(", ") : "None"}
+                 </span>
+              </button>
+
+              {/* Tags Popup - Refined Styling */}
+              {showTagsPopup && (
+                 <div
+                   ref={tagsPopupRef}
+                   className="absolute top-full left-0 mt-2 z-10 w-72 bg-popover text-popover-foreground rounded-lg shadow-lg border border-border p-4 space-y-3"
+                 >
+                   <h4 className="text-xs font-semibold uppercase text-muted-foreground">Select Tags</h4>
+                   <div className="max-h-48 overflow-y-auto pr-2 space-y-1">
+                      {PREDEFINED_TAGS.map((tag) => (
+                         <button
+                            key={tag.id}
+                            onClick={() => toggleTag(tag.id)}
+                            className={cn(
+                              "w-full flex items-center text-left p-1.5 rounded-md text-sm hover:bg-secondary transition-colors",
+                              tags.includes(tag.id) ? "bg-secondary font-medium" : ""
+                            )}
+                         >
+                            <span className="mr-2">{tag.emoji}</span>
+                            <span>{tag.name}</span>
+                            {tags.includes(tag.id) && <CheckCircle2 className="h-4 w-4 ml-auto text-primary" />}
+                         </button>
+                      ))}
+                   </div>
+                   {/* Add New Tag Input - Refined */}
+                   <div className="flex pt-2 border-t border-border">
+                       <input
+                          type="text"
+                          placeholder="New tag..."
+                          value={newTag}
+                          onChange={(e) => setNewTag(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") addNewTag(); }}
+                          className="flex-1 px-2 py-1 border border-input bg-background rounded-l-md text-sm focus:ring-primary focus:border-primary"
+                       />
+                       <button
+                          onClick={addNewTag}
+                          className="px-3 py-1 bg-primary text-primary-foreground rounded-r-md text-sm font-medium hover:bg-primary/90 transition-colors"
+                       >
+                         Add
+                       </button>
+                    </div>
+                 </div>
               )}
             </div>
           </div>
 
-          {/* Color and Icon Popup */}
-          {showColorIconPopup && (
-            <div ref={colorIconPopupRef} className="fixed inset-0 z-50 flex items-center justify-center">
-              <div
-                className="absolute inset-0 bg-black bg-opacity-50"
-                onClick={() => setShowColorIconPopup(false)}
-              ></div>
-              <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl p-6 z-10 max-h-[80vh] overflow-auto">
-                <div className="flex flex-col md:flex-row gap-6">
-                  {/* Color palette section */}
-                  <div className="flex-1">
-                    <div className="grid grid-cols-7 gap-3">
-                      {COLOR_PALETTE.map((colorHex, index) => (
-                        <button
-                          key={index}
-                          className={`w-10 h-10 rounded-full ${selectedColor === colorHex ? "ring-2 ring-gray-400" : ""}`}
-                          style={{ backgroundColor: colorHex }}
-                          onClick={() => setSelectedColor(colorHex)}
-                        />
-                      ))}
-                      <button
-                        className="w-10 h-10 rounded-full bg-gradient-to-r from-red-500 via-green-500 to-blue-500"
-                        onClick={() => {
-                          // In a real app, this would open a color picker
-                          setSelectedColor("#B5A8E0") // Default back to purple for now
-                        }}
-                      />
-                      <button
-                        className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center"
-                        onClick={() => setSelectedColor("transparent")}
-                      >
-                        <div className="w-8 h-0.5 bg-gray-400 transform rotate-45"></div>
-                      </button>
-                    </div>
-                  </div>
+          {/* Notes / Description - Refined Textarea */}
+          <textarea
+            placeholder="Add notes or description..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={4}
+            className="w-full p-3 border border-input bg-background rounded-md text-sm focus:ring-primary focus:border-primary placeholder-muted-foreground resize-none"
+          />
 
-                  {/* Icon selection section */}
-                  <div className="flex-1">
-                    {/* Search bar */}
-                    <div className="relative mb-4">
-                      <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                        <Search className="h-4 w-4 text-gray-400" />
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Search"
-                        className="w-full pl-10 pr-4 py-2 border rounded-md"
-                        value={iconSearchQuery}
-                        onChange={(e) => setIconSearchQuery(e.target.value)}
-                      />
-                    </div>
+          {/* Subtasks Section - Refined */}
+          <div className="space-y-3">
+             <h3 className="text-sm font-medium text-muted-foreground">Subtasks</h3>
+             <div className="space-y-2">
+               {subtasks.map((subtask, index) => (
+                 <div key={index} className="flex items-center group bg-secondary/50 p-2 rounded-md">
+                   <input
+                     type="checkbox"
+                     checked={subtask.completed}
+                     onChange={() => toggleSubtask(index)}
+                     className="mr-3 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                   />
+                   <input
+                     type="text"
+                     value={subtask.title}
+                     onChange={(e) => updateSubtask(index, e.target.value)}
+                     className={cn(
+                       "flex-1 text-sm bg-transparent outline-none focus:bg-background/50 px-1 py-0.5 rounded",
+                       subtask.completed ? "line-through text-muted-foreground" : "text-foreground"
+                     )}
+                   />
+                   <button
+                     onClick={() => removeSubtaskAtIndex(index)}
+                     className="ml-2 p-1 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                     aria-label="Remove subtask"
+                   >
+                     <Trash2 className="h-4 w-4" />
+                   </button>
+                 </div>
+               ))}
+             </div>
 
-                    {/* Recent section */}
-                    <h3 className="text-lg font-medium mb-2">Recent</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {RECENT_ICONS.map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Activity section */}
-                    <h3 className="text-lg font-medium mb-2">Activity</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {ACTIVITY_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Bathroom & Household section */}
-                    <h3 className="text-lg font-medium mb-2">Bathroom & Household</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {BATHROOM_HOUSEHOLD_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Objects section */}
-                    <h3 className="text-lg font-medium mb-2">Objects</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {OBJECT_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Food section */}
-                    <h3 className="text-lg font-medium mb-2">Food</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {FOOD_ICONS.filter((icon) => icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase())).map(
-                        (icon) => (
-                          <button
-                            key={icon.id}
-                            className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                            onClick={() => setSelectedIcon(icon.id)}
-                          >
-                            {renderIcon(icon.id, "h-6 w-6")}
-                          </button>
-                        ),
-                      )}
-                    </div>
-
-                    {/* Clothes section */}
-                    <h3 className="text-lg font-medium mb-2">Clothes</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {CLOTHES_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* People section */}
-                    <h3 className="text-lg font-medium mb-2">People</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {PEOPLE_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Travel section */}
-                    <h3 className="text-lg font-medium mb-2">Travel</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {TRAVEL_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Nature section */}
-                    <h3 className="text-lg font-medium mb-2">Nature</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {NATURE_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Symbols section */}
-                    <h3 className="text-lg font-medium mb-2">Symbols</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {SYMBOL_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-6 w-6")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Flags section */}
-                    <h3 className="text-lg font-medium mb-2">Flags</h3>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {FLAG_ICONS.filter((icon) => icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase())).map(
-                        (icon) => (
-                          <button
-                            key={icon.id}
-                            className={`w-10 h-10 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                            onClick={() => setSelectedIcon(icon.id)}
-                          >
-                            {renderIcon(icon.id, "h-6 w-6")}
-                          </button>
-                        ),
-                      )}
-                    </div>
-
-                    {/* Other icons */}
-                    <div className="flex flex-wrap gap-2 mb-4 border-t pt-4">
-                      {OTHER_ICONS.filter((icon) =>
-                        icon.name.toLowerCase().includes(iconSearchQuery.toLowerCase()),
-                      ).map((icon) => (
-                        <button
-                          key={icon.id}
-                          className={`w-8 h-8 flex items-center justify-center border rounded ${selectedIcon === icon.id ? "border-blue-500 bg-blue-50" : "border-gray-200"}`}
-                          onClick={() => setSelectedIcon(icon.id)}
-                        >
-                          {renderIcon(icon.id, "h-4 w-4")}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Upload button */}
-                    <div className="flex justify-between items-center mt-4">
-                      <button className="flex items-center gap-2 text-gray-700">
-                        <Upload className="h-4 w-4" />
-                        <span>Upload</span>
-                      </button>
-                      <button
-                        className="w-10 h-10 bg-yellow-100 rounded-md flex items-center justify-center"
-                        onClick={() => {
-                          // In a real app, this would be a custom emoji picker
-                        }}
-                      >
-                        <span className="text-xl">👋</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Time settings */}
-          <div className="space-y-5">
-            <div className="flex items-center justify-between">
-              <span className="text-base md:text-lg font-medium text-gray-700">Starts</span>
-              <div className="flex gap-2">
-                {/* Date picker for start date */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button className="px-3 md:px-4 py-1 md:py-2 border border-gray-200 rounded-xl flex items-center gap-2 bg-gray-50 hover:bg-gray-100 transition-colors text-xs md:text-sm">
-                      <CalendarIcon className="h-3 w-3 md:h-4 md:w-4 text-gray-600" />
-                      <span className="text-gray-800">{format(startDate, "PPP")}</span>
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
-                    <Calendar
-                      mode="single"
-                      selected={startDate}
-                      onSelect={(date) => date && setStartDate(date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                {/* Time picker for start time */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button className="px-4 py-2 border border-gray-200 rounded-xl flex items-center gap-2 bg-gray-50 hover:bg-gray-100 transition-colors">
-                      <Clock className="h-4 w-4 text-gray-600" />
-                      <span className="text-gray-800">{startTime}</span>
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-4" align="end">
-                    <div className="space-y-2">
-                      <h4 className="font-medium">Select time</h4>
-                      <div className="flex space-x-2">
-                        <select
-                          className="border rounded p-1"
-                          value={startTime.split(":")[0]}
-                          onChange={(e) => {
-                            const hour = e.target.value
-                            const minute = startTime.split(":")[1]
-                            handleStartTimeChange(`${hour}:${minute}`)
-                          }}
-                        >
-                          {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
-                            <option key={hour} value={hour.toString().padStart(2, "0")}>
-                              {hour.toString().padStart(2, "0")}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="text-xl">:</span>
-                        <select
-                          className="border rounded p-1"
-                          value={startTime.split(":")[1]}
-                          onChange={(e) => {
-                            const hour = startTime.split(":")[0]
-                            const minute = e.target.value
-                            handleStartTimeChange(`${hour}:${minute}`)
-                          }}
-                        >
-                          {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
-                            <option key={minute} value={minute.toString().padStart(2, "0")}>
-                              {minute.toString().padStart(2, "0")}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-base md:text-lg font-medium text-gray-700">Ends</span>
-              <div className="flex gap-2">
-                {/* Date picker for end date */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button className="px-4 py-2 border border-gray-200 rounded-xl flex items-center gap-2 bg-gray-50 hover:bg-gray-100 transition-colors">
-                      <CalendarIcon className="h-4 w-4 text-gray-600" />
-                      <span className="text-gray-800">{format(endDate, "PPP")}</span>
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
-                    <Calendar
-                      mode="single"
-                      selected={endDate}
-                      onSelect={(date) => date && setEndDate(date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                {/* Time picker for end time */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button className="px-4 py-2 border border-gray-200 rounded-xl flex items-center gap-2 bg-gray-50 hover:bg-gray-100 transition-colors">
-                      <Clock className="h-4 w-4 text-gray-600" />
-                      <span className="text-gray-800">{endTime}</span>
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-4" align="end">
-                    <div className="space-y-2">
-                      <h4 className="font-medium">Select time</h4>
-                      <div className="flex space-x-2">
-                        <select
-                          className="border rounded p-1"
-                          value={endTime.split(":")[0]}
-                          onChange={(e) => {
-                            const hour = e.target.value
-                            const minute = endTime.split(":")[1]
-                            handleEndTimeChange(`${hour}:${minute}`)
-                          }}
-                        >
-                          {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
-                            <option key={hour} value={hour.toString().padStart(2, "0")}>
-                              {hour.toString().padStart(2, "0")}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="text-xl">:</span>
-                        <select
-                          className="border rounded p-1"
-                          value={endTime.split(":")[1]}
-                          onChange={(e) => {
-                            const hour = endTime.split(":")[0]
-                            const minute = e.target.value
-                            handleEndTimeChange(`${hour}:${minute}`)
-                          }}
-                        >
-                          {Array.from({ length: 60 }, (_, i) => i).map((minute) => (
-                            <option key={minute} value={minute.toString().padStart(2, "0")}>
-                              {minute.toString().padStart(2, "0")}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-lg font-medium text-gray-700">Repeat</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="px-4 py-2 border border-gray-200 rounded-xl flex items-center gap-2 bg-gray-50 hover:bg-gray-100 transition-colors">
-                    <RefreshCw className="h-4 w-4 text-gray-600" />
-                    <span className="text-gray-800">{repeat}</span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="end">
-                  <div className="p-2">
-                    <div className="space-y-1">
-                      {["No repeat", "Daily", "Weekly", "Monthly", "Yearly"].map((option) => (
-                        <button
-                          key={option}
-                          className={cn(
-                            "w-full text-left px-2 py-1 rounded hover:bg-gray-100",
-                            repeat === option ? "bg-purple-100 text-purple-700" : "",
-                          )}
-                          onClick={() => {
-                            setRepeat(option)
-                          }}
-                        >
-                          {option}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="flex items-center justify-between py-1">
-              <span className="text-lg font-medium text-gray-700">All day</span>
-              <Switch checked={isAllDay} onCheckedChange={setIsAllDay} className="data-[state=checked]:bg-purple-600" />
-            </div>
-
-            <div className="flex items-center justify-between py-1">
-              <span className="text-lg font-medium text-gray-700">Anytime</span>
-              <Switch
-                checked={isAnytime}
-                onCheckedChange={setIsAnytime}
-                className="data-[state=checked]:bg-purple-600"
-              />
-            </div>
-            <div className="flex items-center justify-between py-1">
-              <span className="text-lg font-medium text-gray-700">Energy Required</span>
-              <div className="flex space-x-2">
+             {/* Add Subtask Input & AI Button - Refined */}
+             <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  placeholder="Add a subtask..."
+                  value={newSubtask}
+                  onChange={(e) => setNewSubtask(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") addSubtask(); }}
+                  className="flex-1 px-3 py-1.5 border border-input bg-background rounded-md text-sm focus:ring-primary focus:border-primary"
+                />
                 <button
-                  className={`px-3 py-1 rounded-md flex items-center justify-center ${
-                    energyLevel === "low" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                  }`}
-                  onClick={() => setEnergyLevel("low")}
+                   onClick={generateAISubtasks}
+                   disabled={isGeneratingSubtasks || !title}
+                   className="p-2 rounded-md bg-secondary hover:bg-primary/10 text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                   title={!title ? "Enter a task title to generate subtasks" : "Generate subtasks with AI"}
                 >
-                  <Battery className="h-4 w-4 mr-1" />
-                  Low
+                   {isGeneratingSubtasks ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
                 </button>
-                <button
-                  className={`px-3 py-1 rounded-md flex items-center justify-center ${
-                    energyLevel === "medium" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"
-                  }`}
-                  onClick={() => setEnergyLevel("medium")}
-                >
-                  <Battery className="h-4 w-4 mr-1" />
-                  Medium
-                </button>
-                <button
-                  className={`px-3 py-1 rounded-md flex items-center justify-center ${
-                    energyLevel === "high" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-600"
-                  }`}
-                  onClick={() => setEnergyLevel("high")}
-                >
-                  <Battery className="h-4 w-4 mr-1" />
-                  High
-                </button>
-              </div>
-            </div>
+             </div>
           </div>
 
-          <div className="h-px w-full bg-gradient-to-r from-transparent via-gray-200 to-transparent my-6"></div>
-
-          {/* Subtasks */}
-          <div>
-            <h3 className="text-lg md:text-xl font-medium mb-4 text-gray-800">Sub tasks</h3>
-            <div className="space-y-2 mb-4">
-              {subtasks.map((subtask, index) => (
-                <div
-                  key={subtask.id}
-                  className="flex items-center bg-gray-50 rounded-xl p-3 group hover:bg-gray-100 transition-colors border border-gray-100"
+          {/* Repeat & Energy Level (Example) - Needs proper dropdown/selection components */}
+           <div className="flex items-center space-x-4 text-sm">
+             <div className="flex items-center space-x-2 text-muted-foreground">
+               <RefreshCw className="h-4 w-4" />
+               {/* Replace with actual Dropdown/Select component later */}
+               <select
+                  value={repeat}
+                  onChange={(e) => setRepeat(e.target.value)}
+                  className="px-2 py-1 border border-input bg-background rounded-md focus:ring-primary focus:border-primary"
                 >
-                  <input
-                    type="checkbox"
-                    checked={subtask.completed}
-                    onChange={() => toggleSubtask(index)}
-                    className="mr-3 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                  />
-                  <input
-                    type="text"
-                    value={subtask.title}
-                    onChange={(e) => updateSubtask(index, e.target.value)}
-                    className={`flex-1 text-xs md:text-sm bg-transparent border-none outline-none ${
-                      subtask.completed ? "line-through text-gray-400" : "text-gray-700"
-                    }`}
-                  />
-                  <button
-                    className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => removeSubtaskAtIndex(index)}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
+                  <option>No repeat</option>
+                  <option>Daily</option>
+                  <option>Weekly</option>
+                  <option>Monthly</option>
+                </select>
+             </div>
+             <div className="flex items-center space-x-2 text-muted-foreground">
+               <Battery className="h-4 w-4" />
+                {/* Replace with actual Button Group or Select component later */}
+                <div className="flex space-x-1 bg-secondary p-0.5 rounded-md">
+                   {["low", "medium", "high"].map((level) => (
+                     <button
+                       key={level}
+                       onClick={() => setEnergyLevel(level as "low" | "medium" | "high")}
+                       className={cn(
+                         "px-2 py-0.5 rounded text-xs capitalize",
+                         energyLevel === level ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                       )}
+                     >
+                       {level}
+                     </button>
+                   ))}
+                 </div>
+             </div>
+           </div>
 
-            <div className="flex items-center bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
-              <input
-                type="text"
-                placeholder="Add task"
-                value={newSubtask}
-                onChange={(e) => setNewSubtask(e.target.value)}
-                className="flex-1 bg-transparent border-none p-3 outline-none text-gray-700 placeholder:text-gray-400"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    addSubtask()
-                  }
-                }}
-              />
-              <div className="flex">
-                <button className="p-3 text-gray-400 hover:text-gray-700 transition-colors" onClick={addSubtask}>
-                  <Plus className="h-5 w-5" />
-                </button>
-                <button
-                  className="p-3 text-gray-400 hover:text-purple-600 transition-colors mr-1"
-                  onClick={generateAISubtasks}
-                  disabled={isGeneratingSubtasks}
-                >
-                  {isGeneratingSubtasks ? (
-                    <div className="animate-spin h-5 w-5 border-2 border-purple-500 border-t-transparent rounded-full" />
-                  ) : (
-                    <Sparkles className="h-5 w-5" />
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Tags */}
-          <div className="relative">
-            <h3 className="text-xl font-medium mb-4 text-gray-800">Tags</h3>
-
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <div
-                  key={tag}
-                  className="px-3 py-1.5 bg-gray-50 rounded-xl flex items-center gap-1 border border-gray-100 group hover:bg-gray-100 transition-colors"
-                >
-                  <span className="text-gray-700">{tag}</span>
-                  <button
-                    className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => toggleTag(tag)}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-
-              <button
-                ref={tagsButtonRef}
-                className="px-3 py-1.5 bg-gray-50 rounded-xl flex items-center gap-1 border border-gray-100 hover:bg-gray-100 transition-colors"
-                onClick={() => setShowTagsPopup(!showTagsPopup)}
-              >
-                <Tag className="h-4 w-4 text-gray-600" />
-                <span className="text-gray-700">Add tags</span>
-              </button>
-            </div>
-
-            {/* Tags popup */}
-            {showTagsPopup && (
-              <div
-                ref={tagsPopupRef}
-                className="absolute z-10 mt-2 bg-white rounded-md shadow-lg p-4 border w-full max-w-md"
-                style={{ maxHeight: "300px", overflowY: "auto" }}
-              >
-                <div className="grid grid-cols-2 gap-2">
-                  {PREDEFINED_TAGS.map((tag) => (
-                    <button
-                      key={tag.id}
-                      className={`px-3 py-2 rounded-md border flex items-center gap-2 ${
-                        tags.includes(tag.name) ? "bg-gray-100 border-gray-300" : "bg-white border-gray-200"
-                      }`}
-                      onClick={() => toggleTag(tag.name)}
-                    >
-                      <span>{tag.emoji}</span>
-                      <span>{tag.name}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-4 flex items-center">
-                  <input
-                    type="text"
-                    placeholder="New tag"
-                    value={newTag}
-                    onChange={(e) => setNewTag(e.target.value)}
-                    className="flex-1 border rounded-l-md p-2"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        addNewTag()
-                      }
-                    }}
-                  />
-                  <button className="bg-gray-200 p-2 rounded-r-md" onClick={addNewTag}>
-                    <Plus className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-100 flex justify-between items-center sticky bottom-0 bg-white backdrop-blur-sm bg-white/90">
-          <button
-            className="w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 transition-all"
-            onClick={() => {
-              if (task?.id && onDelete) {
-                onDelete(task.id)
-                onClose()
-              } else {
-                onClose()
-              }
-            }}
-          >
-            <Trash2 className="h-5 w-5" />
-          </button>
-
-          <div className="flex space-x-3">
-            <button className="px-6 py-2.5 rounded-full bg-gray-100 text-gray-800 flex items-center hover:bg-gray-200 transition-colors">
-              <Play className="h-4 w-4 mr-2" />
-              Start task
+        {/* Modal Footer - Refined Button Styles */}
+        <div className="flex items-center justify-between p-4 border-t border-border flex-shrink-0 bg-secondary/50">
+          <div>
+             {currentTask && onDelete && (
+                <button
+                  onClick={() => onDelete(currentTask.id)}
+                  className="flex items-center px-3 py-1.5 rounded-md text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                  aria-label="Delete task"
+                >
+                   <Trash2 className="h-4 w-4 mr-1.5" />
+                   Delete
+                </button>
+              )}
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 rounded-md text-sm font-medium bg-background border border-border hover:bg-secondary transition-colors"
+            >
+              Cancel
             </button>
             <button
-              className="px-4 md:px-6 py-2 md:py-2.5 rounded-full bg-gradient-to-r from-purple-600 to-purple-700 text-white flex items-center hover:from-purple-700 hover:to-purple-800 transition-colors shadow-sm hover:shadow text-xs md:text-sm"
               onClick={handleSave}
+              className="px-4 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              aria-label="Save task"
             >
-              <Save className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+              <Save className="h-4 w-4 mr-1.5 inline-block -mt-0.5" />
               Save
             </button>
           </div>
