@@ -1,3 +1,7 @@
+---
+applyTo: "docs/**/*.md"
+---
+
 # Confluence Docs & Migration
 
 ## Applies when
